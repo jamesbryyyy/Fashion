@@ -138,6 +138,7 @@ button{
 <h2>My Bookings</h2>
 
 <a href="shop.php">← Back to Shop</a>
+<a href="logout.php">logout</a>
 
 <br><br>
 

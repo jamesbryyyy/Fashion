@@ -45,3 +45,4 @@ if (!isset($_SESSION['admin'])) {
 <a href="admin_payments.php">Payments</a> |
 <a href="gowns_create.php">Gowns</a>
 <a href="reports.php">Report</a>
+<a href="admin_logout.php">logout</a>

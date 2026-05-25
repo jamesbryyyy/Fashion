@@ -1,8 +1,7 @@
 <?php
 session_start();
 $con = mysqli_connect("localhost","root","","fashion");
-include 'config.php';
-
+include("../config.php");
 
 function getBookedDays($con,$gown_id){
 

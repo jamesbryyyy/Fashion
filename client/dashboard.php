@@ -1,8 +1,7 @@
 <?php
 session_start();
 $con = mysqli_connect("localhost","root","","fashion");
-include 'config.php';
-
+include("../config.php");
 
 if(!isset($_SESSION["client_id"])){
     header("Location: login.php");

@@ -1,8 +1,7 @@
 <?php
 session_start();
 $con = mysqli_connect("localhost","root","","fashion");
-include 'config.php';
-/*
+include("../config.php");/*
 COUNTS
 */
 $pending = mysqli_fetch_assoc(mysqli_query($con,"SELECT COUNT(*) as c FROM bookings WHERE status='pending'"))['c'];
@@ -19,6 +18,12 @@ FROM bookings b
 INNER JOIN gowns g ON g.id=b.gown_id
 WHERE b.payment_status='paid'
 "))['total'];
+
+
+if (!isset($_SESSION['admin'])) {
+    header("Location: admin_login.php");
+    exit();
+}
 ?>
 
 <h1>Admin Dashboard</h1>

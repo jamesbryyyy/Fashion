@@ -1,5 +1,6 @@
 <?php
 $con = mysqli_connect("localhost","root","","fashion");
+include('auth_check.php');
 
 $revenue = mysqli_query($con,"
 SELECT 

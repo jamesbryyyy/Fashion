@@ -1,5 +1,6 @@
 <?php
 $con = mysqli_connect("localhost","root","","fashion");
+include('auth_check.php');
 
 if(isset($_POST['approve'])){
     $id = $_POST['id'];
@@ -55,7 +56,7 @@ ORDER BY bookings.id DESC
 <td><?php echo $r['name']; ?></td>
 
 <td>
-    <img src="<?php echo $r['receipt_image']; ?>" width="100">
+    <img src="../client/<?php echo $r['receipt_image']; ?>" width="100">
 </td>
 
 <td><?php echo $r['payment_status']; ?></td>

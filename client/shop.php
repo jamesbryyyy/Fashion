@@ -1,25 +1,64 @@
 <?php
 session_start();
-// Database connection - keep your existing logic
-$con = mysqli_connect("localhost","root","","fashion");
+$con = mysqli_connect("localhost", "root", "", "fashion");
 
-function getBookedDays($con, $gown_id) {
+$view = isset($_GET['view']) ? $_GET['view'] : 'gowns';
+
+// --- AVAILABILITY LOGIC (ONLY APPROVED) ---
+
+function getGownBookedDays($con, $gown_id) {
     $days = [];
-    // Approved Bookings
+    
+    // 1. Check standard gown bookings (Approved only)
     $q1 = mysqli_query($con, "SELECT date_from, date_to FROM bookings WHERE gown_id='$gown_id' AND status='approved'");
     while($r = mysqli_fetch_assoc($q1)) {
-        $start = strtotime($r['date_from']);
-        $end = strtotime($r['date_to']);
+        $start = strtotime($r['date_from']); $end = strtotime($r['date_to']);
         for($i=$start; $i<=$end; $i+=86400) { $days[] = date("Y-m-d", $i); }
     }
-    // Blocked Dates
-    $q2 = mysqli_query($con, "SELECT date_from, date_to FROM gown_items WHERE gown_id='$gown_id' AND (status IN ('maintenance', 'cleaning', 'retired', 'rented'))");
+
+    // 2. Check if gown is part of a booked package (Approved only)
+    $q2 = mysqli_query($con, "SELECT date_from, date_to FROM package_bookings WHERE gown_id='$gown_id' AND status='approved'");
     while($r = mysqli_fetch_assoc($q2)) {
-        $start = strtotime($r['date_from']);
-        $end = strtotime($r['date_to']);
+        $start = strtotime($r['date_from']); $end = strtotime($r['date_to']);
         for($i=$start; $i<=$end; $i+=86400) { $days[] = date("Y-m-d", $i); }
     }
-    return $days;
+    
+    return array_values(array_unique($days));
+}
+
+function getArtistBookedDays($con, $artist_id) {
+    $days = [];
+    
+    // 1. Check individual artist bookings (Approved only)
+    $q1 = mysqli_query($con, "SELECT booking_date FROM makeup_bookings WHERE makeup_artist_id='$artist_id' AND status='approved'");
+    while($r = mysqli_fetch_assoc($q1)) { $days[] = $r['booking_date']; }
+
+    // 2. Check if artist is busy with a package (Approved only)
+    $q2 = mysqli_query($con, "SELECT date_from, date_to FROM package_bookings WHERE makeup_artist_id='$artist_id' AND status='approved'");
+    while($r = mysqli_fetch_assoc($q2)) {
+        $start = strtotime($r['date_from']); $end = strtotime($r['date_to']);
+        for($i=$start; $i<=$end; $i+=86400) { $days[] = date("Y-m-d", $i); }
+    }
+    
+    return array_values(array_unique($days));
+}
+
+// Helper Function for Card UI
+function renderCard($title, $img, $price, $sub, $link, $bookedDays) {
+    $bookedJson = json_encode($bookedDays);
+    ?>
+    <div class="card">
+        <div class="img-box"><img src="<?php echo $img; ?>"></div>
+        <div class="card-body">
+            <h3><?php echo $title; ?></h3>
+            <span class="sub-text"><?php echo $sub; ?></span>
+            <div class="price"><?php echo $price; ?></div>
+            <!-- Calendar target with data -->
+            <div class="js-calendar" data-booked='<?php echo $bookedJson; ?>'></div>
+        </div>
+        <a href="<?php echo $link; ?>" class="btn">View Details</a>
+    </div>
+    <?php
 }
 ?>
 
@@ -27,281 +66,138 @@ function getBookedDays($con, $gown_id) {
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Luxury Gown Collection</title>
-    <!-- Fonts -->
+    <title> DAVE POWERS
+    </title>
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
     <style>
-        :root {
-            --gold: #D4AF37;
-            --dark-gold: #996515;
-            --black: #0a0a0a;
-            --dark-grey: #1a1a1a;
-            --light-grey: #e0e0e0;
-            --glass: rgba(255, 255, 255, 0.05);
-        }
-
-        body {
-            font-family: 'Poppins', sans-serif;
-            background-color: var(--black);
-            color: var(--light-grey);
-            margin: 0;
-            padding: 20px;
-        }
-
-        .header {
-            text-align: center;
-            padding: 50px 0;
-        }
-
-        .header h2 {
-            font-family: 'Playfair Display', serif;
-            font-size: 3rem;
-            color: var(--gold);
-            margin: 0;
-            text-transform: uppercase;
-            letter-spacing: 4px;
-        }
-
-        .container {
-            max-width: 1200px;
-            margin: auto;
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-            gap: 30px;
-        }
-
-        /* Card Styling */
-        .card {
-            background: var(--dark-grey);
-            border: 1px solid rgba(212, 175, 55, 0.2);
-            border-radius: 15px;
-            overflow: hidden;
-            transition: transform 0.3s ease, border-color 0.3s ease;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .card:hover {
-            transform: translateY(-10px);
-            border-color: var(--gold);
-        }
-
-        .card-img-wrapper {
-            position: relative;
-            height: 350px;
-            overflow: hidden;
-        }
-
-        .card img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            transition: transform 0.5s ease;
-        }
-
-        .card:hover img {
-            transform: scale(1.1);
-        }
-
-        .card-content {
-            padding: 20px;
-            flex-grow: 1;
-        }
-
-        .card h3 {
-            font-family: 'Playfair Display', serif;
-            color: var(--gold);
-            margin: 0 0 10px 0;
-            font-size: 1.5rem;
-        }
-
-        .price {
-            font-size: 1.2rem;
-            font-weight: 600;
-            color: #fff;
-            margin-bottom: 15px;
-        }
-
-        .details {
-            font-size: 0.9rem;
-            color: #bbb;
-            margin-bottom: 20px;
-            display: flex;
-            gap: 15px;
-        }
-
-        /* Calendar Styling */
-        .calendar-section {
-            background: rgba(0,0,0,0.3);
-            padding: 15px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-        }
-
-        .calendar-title {
-            font-size: 0.8rem;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            color: var(--gold);
-            text-align: center;
-            margin-bottom: 10px;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: separate;
-            border-spacing: 2px;
-        }
-
-        th {
-            font-size: 0.7rem;
-            color: #666;
-            padding-bottom: 5px;
-        }
-
-        td {
-            font-size: 0.75rem;
-            text-align: center;
-            padding: 5px 0;
-            border-radius: 3px;
-        }
-
-        .date-available {
-            background: rgba(255, 255, 255, 0.05);
-            color: #fff;
-        }
-
-        .date-booked {
-            background: var(--dark-gold);
-            color: var(--black);
-            font-weight: bold;
-            opacity: 0.6;
-            text-decoration: line-through;
-        }
-
-        /* Legend */
-        .legend {
-            display: flex;
-            justify-content: center;
-            gap: 15px;
-            font-size: 0.7rem;
-            margin-top: 10px;
-        }
-
-        .legend-item { display: flex; align-items: center; gap: 5px; }
-        .dot { width: 8px; height: 8px; border-radius: 50%; }
-        .dot.gold { background: var(--dark-gold); }
-        .dot.white { background: rgba(255, 255, 255, 0.2); }
-
-        /* Button */
-        .btn {
-            background: linear-gradient(45deg, var(--dark-gold), var(--gold));
-            color: var(--black);
-            padding: 12px;
-            text-decoration: none;
-            display: block;
-            text-align: center;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            transition: opacity 0.3s;
-            border-radius: 0 0 14px 14px;
-        }
-
-        .btn:hover {
-            opacity: 0.9;
-        }
-
+        :root { --gold: #D4AF37; --black: #0a0a0a; --grey: #161616; --white: #ffffff; }
+        body { font-family: 'Poppins', sans-serif; background: var(--black); color: var(--white); margin: 0; }
+        .atelier-header { text-align: center; padding: 40px 20px 10px; }
+        .atelier-header h1 { font-family: 'Playfair Display', serif; font-size: 2.2rem; color: var(--gold); letter-spacing: 4px; margin: 0; }
+        .atelier-nav { display: flex; justify-content: center; margin: 20px 0; gap: 20px; }
+        .atelier-nav a { text-decoration: none; color: #666; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1.5px; transition: 0.3s; padding-bottom: 5px; }
+        .atelier-nav a.active { color: var(--gold); border-bottom: 2px solid var(--gold); }
+        .container { max-width: 1200px; margin: 0 auto 50px; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 20px; padding: 0 15px; }
+        .card { background: var(--grey); border: 1px solid #222; transition: 0.3s; display: flex; flex-direction: column; overflow: hidden; }
+        .card:hover { border-color: var(--gold); transform: translateY(-3px); }
+        .img-box { height: 250px; overflow: hidden; }
+        .img-box img { width: 100%; height: 100%; object-fit: cover; }
+        .card-body { padding: 15px; flex-grow: 1; text-align: center; }
+        .card-body h3 { font-family: 'Playfair Display', serif; color: var(--gold); margin: 0 0 5px; font-size: 1.1rem; }
+        .sub-text { font-size: 0.65rem; color: #888; display: block; margin-bottom: 8px; min-height: 15px; }
+        .price { font-weight: 600; font-size: 1rem; margin-bottom: 5px; }
+        .cal-box { background: rgba(0,0,0,0.4); padding: 8px; border-radius: 4px; margin-top: 10px; border: 1px solid #333; }
+        .cal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
+        .cal-month { font-size: 0.55rem; text-transform: uppercase; color: var(--gold); font-weight: bold; }
+        .cal-btn { background: none; border: none; color: var(--gold); cursor: pointer; font-size: 0.8rem; }
+        table { width: 100%; border-spacing: 1px; }
+        td { font-size: 0.55rem; padding: 2px; text-align: center; width: 14%; }
+        .date-free { background: rgba(255,255,255,0.03); color: #555; }
+        .date-booked { background: var(--gold) !important; color: #000 !important; font-weight: bold; text-decoration: line-through; }
+        .btn { background: var(--gold); color: #000; text-align: center; padding: 12px; text-decoration: none; font-weight: 700; text-transform: uppercase; font-size: 0.7rem; }
     </style>
 </head>
 <body>
 
-<div class="header">
-    <h2>The Gown Atelier</h2>
-    <p style="color: #666;">Exquisite Elegance for Your Special Moments</p>
-</div>
+<?php include '../header.php'; ?>
+
+<section class="atelier-header">
+    <h1>SHOP SERVICES</h1>
+    <nav class="atelier-nav">
+        <a href="?view=gowns" class="<?php echo $view == 'gowns' ? 'active' : ''; ?>">Gowns</a>
+        <a href="?view=makeup" class="<?php echo $view == 'makeup' ? 'active' : ''; ?>">Artists</a>
+        <a href="?view=packages" class="<?php echo $view == 'packages' ? 'active' : ''; ?>">Packages</a>
+    </nav>
+</section>
 
 <div class="container">
+    <?php 
+    if($view == 'gowns') {
+        $q = mysqli_query($con, "SELECT * FROM gowns");
+        while($r = mysqli_fetch_assoc($q)) {
+            $booked = getGownBookedDays($con, $r['id']);
+            renderCard($r['name'], $r['image'], "₱".number_format($r['base_price'], 2), "Premium Collection", "gown_details.php?id=".$r['id'], $booked);
+        }
+    } 
+    elseif($view == 'makeup') {
+        $q = mysqli_query($con, "SELECT * FROM makeup_artists");
+        while($r = mysqli_fetch_assoc($q)) {
+            $booked = getArtistBookedDays($con, $r['id']);
+            renderCard($r['name'], $r['image'], "₱".number_format($r['price'], 2), $r['specialty'], "makeup_details.php?id=".$r['id'], $booked);
+        }
+    }
+    elseif($view == 'packages') {
+        $q = mysqli_query($con, "SELECT packages.*, gowns.name as gname, makeup_artists.name as mname FROM packages JOIN gowns ON packages.gown_id = gowns.id JOIN makeup_artists ON packages.makeup_artist_id = makeup_artists.id");
+        while($r = mysqli_fetch_assoc($q)) {
+            // Packages check availability for BOTH components
+            $gBooked = getGownBookedDays($con, $r['gown_id']);
+            $mBooked = getArtistBookedDays($con, $r['makeup_artist_id']);
+            $booked = array_values(array_unique(array_merge($gBooked, $mBooked)));
+            renderCard($r['package_name'], $r['image'], "₱".number_format($r['package_price'], 2), $r['gname']." + ".$r['mname'], "package_details.php?id=".$r['id'], $booked);
+        }
+    }
+    ?>
+</div>
 
-<?php
-$q = mysqli_query($con, "
-    SELECT gowns.id AS gown_id, gowns.name, gowns.description, gowns.image, 
-           gowns.base_price, gowns.category, gown_items.size, gown_items.color 
-    FROM gowns 
-    LEFT JOIN gown_items ON gowns.id = gown_items.gown_id
-");
-
-while($r = mysqli_fetch_assoc($q)){
-    $booked = getBookedDays($con, $r['gown_id']);
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    const calendars = document.querySelectorAll('.js-calendar');
+    const now = new Date();
     
-    // Calendar Logic
-    $month = date("m");
-    $year = date("Y");
-    $daysInMonth = cal_days_in_month(CAL_GREGORIAN, $month, $year);
-    $firstDayOfMonth = date("w", strtotime("$year-$month-01"));
-?>
+    calendars.forEach(cal => {
+        let currentMonth = now.getMonth();
+        let currentYear = now.getFullYear();
+        let bookedDays = [];
 
-<div class="card">
-    <div class="card-img-wrapper">
-        <img src="<?php echo $r['image']; ?>" alt="Gown Image">
-    </div>
+        try {
+            let rawData = cal.getAttribute('data-booked');
+            bookedDays = JSON.parse(rawData);
+            if (!Array.isArray(bookedDays)) bookedDays = Object.values(bookedDays);
+        } catch(e) { bookedDays = []; }
 
-    <div class="card-content">
-        <h3><?php echo $r['name']; ?></h3>
-        <div class="price">₱<?php echo number_format($r['base_price'], 2); ?></div>
-        
-        <div class="details">
-            <span><strong>Size:</strong> <?php echo $r['size']; ?></span>
-            <span><strong>Color:</strong> <?php echo $r['color']; ?></span>
-        </div>
+        function render(month, year) {
+            const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+            let firstDay = new Date(year, month, 1).getDay();
+            let daysInMonth = new Date(year, month + 1, 0).getDate();
 
-        <div class="calendar-section">
-            <div class="calendar-title"><?php echo date("F Y"); ?> Availability</div>
-            <table>
-                <thead>
-                    <tr><th>S</th><th>M</th><th>T</th><th>W</th><th>T</th><th>F</th><th>S</th></tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <?php
-                        // Print empty slots before the first day of the month
-                        for($x = 0; $x < $firstDayOfMonth; $x++) {
-                            echo "<td></td>";
-                        }
+            let html = `
+                <div class="cal-box">
+                    <div class="cal-header">
+                        <button class="cal-btn prev">❮</button>
+                        <div class="cal-month">${monthNames[month]} ${year}</div>
+                        <button class="cal-btn next">❯</button>
+                    </div>
+                    <table><tr>`;
 
-                        for($i = 1; $i <= $daysInMonth; $i++) {
-                            $currentDate = date("Y-m-d", strtotime("$year-$month-$i"));
-                            $isBooked = in_array($currentDate, $booked);
-                            $class = $isBooked ? 'date-booked' : 'date-available';
-                            
-                            echo "<td class='$class'>$i</td>";
+            for (let i = 0; i < firstDay; i++) { html += '<td></td>'; }
 
-                            // New row every Saturday
-                            if(($i + $firstDayOfMonth) % 7 == 0) {
-                                echo "</tr><tr>";
-                            }
-                        }
-                        ?>
-                    </tr>
-                </tbody>
-            </table>
-            
-            <div class="legend">
-                <div class="legend-item"><span class="dot white"></span> Available</div>
-                <div class="legend-item"><span class="dot gold"></span> Unavailable</div>
-            </div>
-        </div>
-    </div>
+            for (let i = 1; i <= daysInMonth; i++) {
+                let dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+                let isBooked = bookedDays.includes(dateStr) ? 'date-booked' : 'date-free';
+                html += `<td class="${isBooked}">${i}</td>`;
+                if ((i + firstDay) % 7 === 0) html += '</tr><tr>';
+            }
 
-    <a class="btn" href="gown_details.php?id=<?php echo $r['gown_id']; ?>">
-        Book Appointment
-    </a>
-</div>
+            html += '</tr></table></div>';
+            cal.innerHTML = html;
 
-<?php } ?>
+            cal.querySelector('.prev').onclick = (e) => {
+                e.preventDefault();
+                currentMonth--;
+                if(currentMonth < 0) { currentMonth = 11; currentYear--; }
+                render(currentMonth, currentYear);
+            };
 
-</div>
-
+            cal.querySelector('.next').onclick = (e) => {
+                e.preventDefault();
+                currentMonth++;
+                if(currentMonth > 11) { currentMonth = 0; currentYear++; }
+                render(currentMonth, currentYear);
+            };
+        }
+        render(currentMonth, currentYear);
+    });
+});
+</script>
 </body>
 </html>

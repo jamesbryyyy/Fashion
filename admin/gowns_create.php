@@ -1,395 +1,213 @@
 <?php
-$con = mysqli_connect("localhost", "root", "", "fashion");
-include('auth_check.php');
+// Note: No need to include db.php or auth_check.php if this file is called via the main dashboard index.
 
-if (!$con) {
-    die("Connection failed: " . mysqli_connect_error());
+// --- DELETE GOWN LOGIC (Soft Delete) ---
+if (isset($_GET['delete_id'])) {
+    $delete_id = mysqli_real_escape_string($conn, $_GET['delete_id']);
+    mysqli_query($conn, "UPDATE gowns SET is_deleted = 1, deleted_at = NOW() WHERE id = '$delete_id'");
+    echo "<script>alert('🗑️ Gown moved to trash'); window.location='?page=gowns';</script>";
+    exit();
 }
 
-?>
-
-<h3>Gown Management</h3>
-
-<!-- ADD FORM -->
-<form method="POST" enctype="multipart/form-data">
-
-<table border="1" cellpadding="10">
-
-<tr>
-    <td>Gown Code</td>
-    <td><input type="text" name="gown_code" required></td>
-</tr>
-
-<tr>
-    <td>Name</td>
-    <td><input type="text" name="name" required></td>
-</tr>
-
-<tr>
-    <td>Description</td>
-    <td><input type="text" name="description"></td>
-</tr>
-
-<tr>
-    <td>Category</td>
-    <td><input type="text" name="category"></td>
-</tr>
-
-<tr>
-    <td>Color</td>
-    <td><input type="text" name="color"></td>
-</tr>
-
-<tr>
-    <td>Size</td>
-    <td><input type="text" name="size"></td>
-</tr>
-
-<tr>
-    <td>Base Price</td>
-    <td><input type="number" name="base_price" step="0.01"></td>
-</tr>
-
-<tr>
-    <td>Image</td>
-    <td><input type="file" name="image" required></td>
-</tr>
-
-<tr>
-    <td colspan="2">
-        <input type="submit" name="btnsubmit" value="Add Gown">
-    </td>
-</tr>
-
-</table>
-
-</form>
-
-<?php
-
-// ADD GOWN
+// --- ADD GOWN LOGIC ---
 if (isset($_POST["btnsubmit"])) {
-
-    $gown_code = $_POST["gown_code"];
-    $name = $_POST["name"];
-    $description = $_POST["description"];
-    $category = $_POST["category"];
-    $color = $_POST["color"];
-    $size = $_POST["size"];
+    $gown_code = mysqli_real_escape_string($conn, $_POST["gown_code"]);
+    $name = mysqli_real_escape_string($conn, $_POST["name"]);
+    $description = mysqli_real_escape_string($conn, $_POST["description"]);
+    $category = mysqli_real_escape_string($conn, $_POST["category"]);
+    $color = mysqli_real_escape_string($conn, $_POST["color"]);
+    $size = mysqli_real_escape_string($conn, $_POST["size"]);
     $base_price = $_POST["base_price"];
 
-    $image = "../asset/" . basename($_FILES["image"]["name"]);
+    $image_name = basename($_FILES["image"]["name"]);
+    $image_path = "../asset/" . $image_name;
+    move_uploaded_file($_FILES["image"]["tmp_name"], $image_path);
 
-    move_uploaded_file($_FILES["image"]["tmp_name"], $image);
+    mysqli_query($conn, "INSERT INTO gowns (name, description, image, base_price, category, created_at, is_deleted) 
+                        VALUES ('$name', '$description', '$image_path', '$base_price', '$category', NOW(), 0)");
+    
+    $gown_id = mysqli_insert_id($conn);
 
-    // INSERT GOWN
-    mysqli_query($con, "
-        INSERT INTO gowns
-        (
-            name,
-            description,
-            image,
-            base_price,
-            category,
-            created_at
-        )
-        VALUES
-        (
-            '$name',
-            '$description',
-            '$image',
-            '$base_price',
-            '$category',
-            NOW()
-        )
-    ");
+    mysqli_query($conn, "INSERT INTO gown_items (gown_id, size, sku, color, status, created_at) 
+                        VALUES ('$gown_id', '$size', '$gown_code', '$color', 'available', NOW())");
 
-    $gown_id = mysqli_insert_id($con);
-
-    // INSERT ITEM
-    mysqli_query($con, "
-        INSERT INTO gown_items
-        (
-            gown_id,
-            size,
-            sku,
-            color,
-            status,
-            created_at
-        )
-        VALUES
-        (
-            '$gown_id',
-            '$size',
-            '$gown_code',
-            '$color',
-            'available',
-            NOW()
-        )
-    ");
-
-    echo "<script>alert('Gown Added');</script>";
-    echo "<script>window.location='';</script>";
+    echo "<script>alert('✅ Gown Added Successfully'); window.location='?page=gowns';</script>";
 }
-?>
 
-<hr>
-
-<h3>Gown List</h3>
-
-<table border="1" cellpadding="10">
-
-<tr>
-    <th>Image</th>
-    <th>SKU</th>
-    <th>Name</th>
-    <th>Description</th>
-    <th>Category</th>
-    <th>Color</th>
-    <th>Size</th>
-    <th>Base Price</th>
-    <th>Status</th>
-    <th>Date From</th>
-    <th>Date To</th>
-    <th>Action</th>
-</tr>
-
-<?php
-
-$q = mysqli_query($con, "
-
-    SELECT
-
-        gowns.id AS gown_id,
-        gowns.name,
-        gowns.description,
-        gowns.image,
-        gowns.base_price,
-        gowns.category,
-
-        gown_items.id AS item_id,
-        gown_items.size,
-        gown_items.sku,
-        gown_items.color,
-        gown_items.status,
-        gown_items.date_from,
-        gown_items.date_to
-
-    FROM gowns
-
-    LEFT JOIN gown_items
-    ON gowns.id = gown_items.gown_id
-
-    ORDER BY gowns.id DESC
-
-");
-
-while ($r = mysqli_fetch_array($q)) {
-
-?>
-
-<tr>
-
-<form method="POST">
-
-    <td>
-        <img src="<?php echo $r["image"]; ?>" width="80">
-    </td>
-
-    <td><?php echo $r["sku"]; ?></td>
-
-    <td><?php echo $r["name"]; ?></td>
-
-    <td><?php echo $r["description"]; ?></td>
-
-    <td><?php echo $r["category"]; ?></td>
-
-    <td><?php echo $r["color"]; ?></td>
-
-    <td><?php echo $r["size"]; ?></td>
-
-    <td>
-        ₱<?php echo number_format($r["base_price"], 2); ?>
-    </td>
-
-    <td>
-
-        <input type="hidden" name="item_id"
-        value="<?php echo $r["item_id"]; ?>">
-
-        <select name="status">
-
-            <option value="available"
-            <?php if($r["status"]=="available") echo "selected"; ?>>
-                Available
-            </option>
-
-            <option value="cleaning"
-            <?php if($r["status"]=="cleaning") echo "selected"; ?>>
-                Cleaning
-            </option>
-
-            <option value="maintenance"
-            <?php if($r["status"]=="maintenance") echo "selected"; ?>>
-                Maintenance
-            </option>
-
-            <option value="retired"
-            <?php if($r["status"]=="retired") echo "selected"; ?>>
-                Retired
-            </option>
-
-            <option value="rented"
-            <?php if($r["status"]=="rented") echo "selected"; ?>>
-                Rented
-            </option>
-
-        </select>
-
-    </td>
-
-    <td>
-
-        <input
-            type="date"
-            name="date_from"
-            value="<?php echo $r["date_from"]; ?>"
-        >
-
-    </td>
-
-    <td>
-
-        <input
-            type="date"
-            name="date_to"
-            value="<?php echo $r["date_to"]; ?>"
-        >
-
-    </td>
-
-    <td>
-
-        <button type="submit" name="btnupdate">
-            Update
-        </button>
-
-    </td>
-
-</form>
-
-</tr>
-
-<?php } ?>
-
-</table>
-
-<?php
-
-// UPDATE STATUS
+// --- UPDATE STATUS LOGIC ---
 if(isset($_POST["btnupdate"])){
-
     $item_id = $_POST["item_id"];
     $status = $_POST["status"];
     $date_from = $_POST["date_from"];
     $date_to = $_POST["date_to"];
 
-    // AVAILABLE = REMOVE BLOCK DATES
     if($status == "available"){
-
-        mysqli_query($con, "
-
-            UPDATE gown_items
-
-            SET
-                status='available',
-                date_from=NULL,
-                date_to=NULL
-
-            WHERE id='$item_id'
-
-        ");
-
+        mysqli_query($conn, "UPDATE gown_items SET status='available', date_from=NULL, date_to=NULL WHERE id='$item_id'");
     } else {
-
-        // REQUIRE DATES
         if(empty($date_from) || empty($date_to)){
-
-            echo "<script>alert('Please select Date From and Date To');</script>";
-
+            echo "<script>alert('Please select Date Range for non-available status');</script>";
         } else {
-
-            mysqli_query($con, "
-
-                UPDATE gown_items
-
-                SET
-                    status='$status',
-                    date_from='$date_from',
-                    date_to='$date_to'
-
-                WHERE id='$item_id'
-
-            ");
-
-            echo "<script>alert('Updated Successfully');</script>";
-            echo "<script>window.location='';</script>";
+            mysqli_query($conn, "UPDATE gown_items SET status='$status', date_from='$date_from', date_to='$date_to' WHERE id='$item_id'");
+            echo "<script>alert('Status Updated'); window.location='?page=gowns';</script>";
         }
     }
 }
 ?>
 
-<hr>
+<style>
+    :root { 
+        --primary-blue: #1e3a8a; 
+        --accent-blue: #3b82f6;  
+        --bg-light: #f3f4f6;    
+        --white: #ffffff;
+        --text-dark: #1f2937;
+        --border: #e5e7eb;
+        --danger: #ef4444;
+    }
+    
+    h3 { color: var(--primary-blue); font-weight: 600; border-left: 5px solid var(--accent-blue); padding-left: 15px; margin-bottom: 25px; }
 
-<h3>Booking Validation Example</h3>
+    .admin-card { background: var(--white); padding: 30px; border-radius: 8px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); margin-bottom: 40px; }
+    .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; }
+    .form-group { display: flex; flex-direction: column; }
+    label { font-size: 0.75rem; color: #6b7280; margin-bottom: 5px; text-transform: uppercase; font-weight: bold; }
+    input, select { background: var(--white); border: 1px solid var(--border); padding: 10px; border-radius: 5px; }
+    
+    .btn-add { grid-column: 1 / -1; background: var(--primary-blue); color: white; font-weight: bold; padding: 12px; border: none; border-radius: 5px; cursor: pointer; text-transform: uppercase; margin-top: 10px; }
+    .btn-add:hover { background: var(--accent-blue); }
 
-<?php
-/*
-USE THIS IN YOUR BOOKING PAGE
+    .table-container { background: var(--white); border-radius: 8px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); overflow: hidden; }
+    table { width: 100%; border-collapse: collapse; }
+    th { background: var(--primary-blue); color: white; text-align: left; padding: 15px; font-size: 0.8rem; text-transform: uppercase; }
+    td { padding: 15px; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
+    tr:hover { background-color: #f9fafb; }
+    
+    .gown-img { width: 50px; height: 70px; object-fit: cover; border-radius: 4px; border: 1px solid var(--border); }
+    .status-select { padding: 6px; font-size: 0.8rem; border: 1px solid var(--accent-blue); border-radius: 4px; }
+    
+    .btn-update { background: var(--white); border: 1px solid var(--primary-blue); color: var(--primary-blue); padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: 600; }
+    .btn-update:hover { background: var(--primary-blue); color: white; }
+    
+    .btn-delete { background: #fee2e2; border: 1px solid var(--danger); color: var(--danger); padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: 600; text-decoration: none; font-size: 0.8rem; }
+    .btn-delete:hover { background: var(--danger); color: white; }
 
-$item_id = 1;
-$rent_from = '2026-05-28';
-$rent_to = '2026-05-30';
+    .sku-tag { font-size: 0.75rem; background: #dbeafe; color: #1e40af; padding: 2px 8px; border-radius: 99px; display: inline-block; }
+    .actions-cell { display: flex; gap: 10px; align-items: center; }
+</style>
 
-$check = mysqli_query($con, "
+<div class="container">
+    <h3>Add New Inventory Item</h3>
+    <div class="admin-card">
+        <form method="POST" enctype="multipart/form-data">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>SKU / Gown Code</label>
+                    <input type="text" name="gown_code" required>
+                </div>
+                <div class="form-group">
+                    <label>Gown Name</label>
+                    <input type="text" name="name" required>
+                </div>
+                <div class="form-group">
+                    <label>Category</label>
+                    <select name="category">
+                        <option>Bridal</option>
+                        <option>Evening Wear</option>
+                        <option>Debut</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Size</label>
+                    <input type="text" name="size">
+                </div>
+                <div class="form-group">
+                    <label>Color</label>
+                    <input type="text" name="color">
+                </div>
+                <div class="form-group">
+                    <label>Base Price (₱)</label>
+                    <input type="number" name="base_price" step="0.01">
+                </div>
+                <div class="form-group" style="grid-column: span 2;">
+                    <label>Description</label>
+                    <input type="text" name="description">
+                </div>
+                <div class="form-group">
+                    <label>Upload Photo</label>
+                    <input type="file" name="image" required>
+                </div>
+                <button type="submit" name="btnsubmit" class="btn-add">Add Gown to System</button>
+            </div>
+        </form>
+    </div>
 
-    SELECT *
+    <h3>Current Gown Inventory</h3>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Image</th>
+                    <th>Product Details</th>
+                    <th>Category</th>
+                    <th>Size/Color</th>
+                    <th>Rental Price</th>
+                    <th>Status</th>
+                    <th>Dates</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php
+                $q = mysqli_query($conn, "SELECT g.id AS gown_id, g.name, g.description, g.image, g.base_price, g.category,
+                                                gi.id AS item_id, gi.size, gi.sku, gi.color, gi.status, gi.date_from, gi.date_to
+                                         FROM gowns g
+                                         LEFT JOIN gown_items gi ON g.id = gi.gown_id
+                                         WHERE g.is_deleted = 0
+                                         ORDER BY g.id DESC");
 
-    FROM gown_items
-
-    WHERE id='$item_id'
-
-    AND (
-        status='maintenance'
-        OR status='cleaning'
-        OR status='retired'
-        OR status='rented'
-    )
-
-    AND (
-
-        '$rent_from' BETWEEN date_from AND date_to
-
-        OR
-
-        '$rent_to' BETWEEN date_from AND date_to
-
-        OR
-
-        date_from BETWEEN '$rent_from' AND '$rent_to'
-
-    )
-
-");
-
-if(mysqli_num_rows($check) > 0){
-
-    echo "This gown is unavailable.";
-
-} else {
-
-    echo "Gown is available.";
-
-}
-*/
-?>
+                while ($r = mysqli_fetch_array($q)) {
+                ?>
+                <tr>
+                    <form method="POST">
+                        <td><img src="<?php echo $r["image"]; ?>" class="gown-img"></td>
+                        <td>
+                            <div style="font-weight: 600;"><?php echo $r["name"]; ?></div>
+                            <span class="sku-tag"><?php echo $r["sku"]; ?></span>
+                        </td>
+                        <td><?php echo $r["category"]; ?></td>
+                        <td><?php echo $r["size"]; ?> / <?php echo $r["color"]; ?></td>
+                        <td style="font-weight: bold; color: var(--primary-blue);">
+                            ₱<?php echo number_format($r["base_price"], 2); ?>
+                        </td>
+                        <td>
+                            <input type="hidden" name="item_id" value="<?php echo $r["item_id"]; ?>">
+                            <select name="status" class="status-select">
+                                <option value="available" <?php if($r["status"]=="available") echo "selected"; ?>>Available</option>
+                                <option value="cleaning" <?php if($r["status"]=="cleaning") echo "selected"; ?>>Cleaning</option>
+                                <option value="maintenance" <?php if($r["status"]=="maintenance") echo "selected"; ?>>Maintenance</option>
+                                <option value="rented" <?php if($r["status"]=="rented") echo "selected"; ?>>Rented</option>
+                            </select>
+                        </td>
+                        <td>
+                            <div style="display:flex; gap:3px; flex-direction:column">
+                                <input type="date" name="date_from" value="<?php echo $r["date_from"]; ?>" style="padding:2px; font-size:0.7rem;">
+                                <input type="date" name="date_to" value="<?php echo $r["date_to"]; ?>" style="padding:2px; font-size:0.7rem;">
+                            </div>
+                        </td>
+                        <td>
+                            <div class="actions-cell">
+                                <button type="submit" name="btnupdate" class="btn-update">Update</button>
+                                <a href="?page=gowns&delete_id=<?php echo $r['gown_id']; ?>" 
+                                   class="btn-delete" 
+                                   onclick="return confirm('Are you sure you want to delete this?')">
+                                   Delete
+                                </a>
+                            </div>
+                        </td>
+                    </form>
+                </tr>
+                <?php } ?>
+            </tbody>
+        </table>
+    </div>
+</div>

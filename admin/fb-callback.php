@@ -1,57 +1,41 @@
 <?php
-session_start();
+include('../db.php');
+
+if (!isset($_SESSION['admin_id'])) { die("Unauthorized"); }
 
 $fbAppId = "4310065995909073";
-$fbAppSecret = "adca9925f27ae437340069c1dab7c637"; 
+$fbAppSecret = "c256d303deba702ec50f8b99bc5b15f7"; 
 $redirectUri = "http://localhost/Fashion/admin/fb-callback.php";
 
-if (!isset($_GET['code'])) {
-    die("Error: No code received. Please try logging in again.");
+if (isset($_GET['code'])) {
+    // 1. Get User Token
+    $tokenUrl = "https://graph.facebook.com/v21.0/oauth/access_token?" . http_build_query([
+        'client_id' => $fbAppId,
+        'redirect_uri' => $redirectUri,
+        'client_secret' => $fbAppSecret,
+        'code' => $_GET['code']
+    ]);
+    $resp = json_decode(file_get_contents($tokenUrl), true);
+    $userToken = $resp['access_token'];
+
+    // 2. Get Page Access Token and Name
+    $pagesUrl = "https://graph.facebook.com/v21.0/me/accounts?access_token=" . $userToken;
+    $pagesResp = json_decode(file_get_contents($pagesUrl), true);
+
+    if (!empty($pagesResp['data'])) {
+        $page = $pagesResp['data'][0]; // Gets the first page found
+        $pageId = $page['id'];
+        $pageName = $page['name'];
+        $pageToken = $page['access_token'];
+        $adminId = $_SESSION['admin_id'];
+
+        // 3. Save or Update to Database
+        $stmt = $conn->prepare("INSERT INTO facebook_settings (admin_id, access_token, page_id, page_name) 
+                                VALUES (?, ?, ?, ?) 
+                                ON DUPLICATE KEY UPDATE access_token=?, page_id=?, page_name=?");
+        $stmt->bind_param("issssss", $adminId, $pageToken, $pageId, $pageName, $pageToken, $pageId, $pageName);
+        $stmt->execute();
+
+        header("Location: admin_dashboard.php?page=cms&success=connected");
+    }
 }
-
-// 1. Exchange Code for Access Token using cURL
-$tokenUrl = "https://graph.facebook.com/v21.0/oauth/access_token?" . http_build_query([
-    'client_id'     => $fbAppId,
-    'client_secret' => $fbAppSecret,
-    'redirect_uri'  => $redirectUri,
-    'code'          => $_GET['code']
-]);
-
-$ch = curl_init();
-curl_setopt($ch, CURLOPT_URL, $tokenUrl);
-curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false); 
-$response = curl_exec($ch);
-$data = json_decode($response, true);
-curl_close($ch);
-
-if (isset($data['error'])) {
-    echo "<h3>Token Error</h3>" . $data['error']['message'];
-    echo "<br><a href='admin_login.php'>Go Back</a>";
-    exit;
-}
-
-$userAccessToken = $data['access_token'];
-
-// 2. Fetch User's Pages
-$pageUrl = "https://graph.facebook.com/v21.0/me/accounts?access_token=" . $userAccessToken;
-
-$ch = curl_init();
-curl_setopt($ch, CURLOPT_URL, $pageUrl);
-curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-$pageResponse = curl_exec($ch);
-$pagesData = json_decode($pageResponse, true);
-curl_close($ch);
-
-if (!isset($pagesData['data'])) {
-    die("Error fetching pages. Check your app permissions.");
-}
-
-// 3. Store in session
-$_SESSION['user_token'] = $userAccessToken;
-$_SESSION['pages'] = $pagesData['data'];
-
-// 4. Redirect to Dashboard
-header("Location: admin_dashboard.php");
-exit();

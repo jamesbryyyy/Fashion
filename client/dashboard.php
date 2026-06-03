@@ -16,7 +16,7 @@ $client_id = $_SESSION["client_id"];
     <title>My Account | Aura Luxury Rentals</title>
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
     <style>
-        :root { --gold: #D4AF37; --black: #0a0a0a; --dark-grey: #161616; --white: #ffffff; }
+        :root { --gold: #D4AF37; --black: #0a0a0a; --dark-grey: #161616; --white: #ffffff; --blue-verify: #3498db; }
         body { font-family: 'Poppins', sans-serif; background: var(--black); color: #e0e0e0; margin: 0; padding-bottom: 50px; }
         
         .navbar { display: flex; justify-content: space-between; padding: 20px 10%; background: rgba(0,0,0,0.9); border-bottom: 1px solid rgba(212, 175, 55, 0.2); position: sticky; top: 0; z-index: 1000; align-items: center; }
@@ -39,6 +39,9 @@ $client_id = $_SESSION["client_id"];
         .status-pending { background: #3a2e00; color: #ffcc00; }
         .status-approved { background: #002e14; color: #00ff73; }
         .status-rejected { background: #3a0000; color: #ff4d4d; }
+        
+        /* New Verification Style */
+        .status-verification { background: rgba(52, 152, 219, 0.2); color: var(--blue-verify); border: 1px solid var(--blue-verify); padding: 8px 15px; border-radius: 5px; font-size: 0.75rem; display: inline-block; margin-top: 15px; font-weight: 600; }
 
         .btn-pay { display: inline-block; background: var(--gold); color: #000; padding: 10px 20px; border-radius: 5px; text-decoration: none; font-weight: 700; font-size: 0.8rem; text-transform: uppercase; margin-top: 15px; transition: 0.3s; }
         .btn-pay:hover { background: #f1c40f; transform: translateY(-2px); }
@@ -65,7 +68,15 @@ $client_id = $_SESSION["client_id"];
     <!-- GOWN RENTALS -->
     <h3 class="section-title">Gown Rentals</h3>
     <?php
-    $q_gowns = mysqli_query($con,"SELECT b.*, g.name, g.image, g.base_price FROM bookings b JOIN gowns g ON g.id = b.gown_id WHERE b.client_id='$client_id' ORDER BY b.id DESC");
+    // Subquery to check if there's a pending payment record
+    $q_gowns = mysqli_query($con,"
+        SELECT b.*, g.name, g.image, g.base_price,
+        (SELECT status FROM payments WHERE booking_id = b.id ORDER BY id DESC LIMIT 1) as p_status 
+        FROM bookings b 
+        JOIN gowns g ON g.id = b.gown_id 
+        WHERE b.client_id='$client_id' 
+        ORDER BY b.id DESC");
+
     if(mysqli_num_rows($q_gowns) == 0) echo "<p style='color:#666; margin-top:15px;'>No gown reservations found.</p>";
     while($r=mysqli_fetch_assoc($q_gowns)){ ?>
         <div class="card">
@@ -78,9 +89,17 @@ $client_id = $_SESSION["client_id"];
                     <span class="data-item">📅 <?php echo $r['date_from']; ?> to <?php echo $r['date_to']; ?></span>
                     <span class="data-item">💳 PAYMENT: <?php echo strtoupper($r['payment_status'] ?: 'unpaid'); ?></span>
                 </div>
-                <?php if($r['status'] == 'approved' && $r['payment_status'] !== 'paid'){ ?>
-                    <a href="payment.php?booking_id=<?php echo $r['id']; ?>" class="btn-pay">Upload Payment Receipt</a>
-                <?php } ?>
+
+                <?php 
+                if($r['status'] == 'approved' && $r['payment_status'] !== 'paid'){ 
+                    if($r['p_status'] == 'pending'){ ?>
+                        <!-- Show this text if receipt is sent but not approved -->
+                        <div class="status-verification">⌛ Receipt sent. Waiting for verification...</div>
+                    <?php } else { ?>
+                        <!-- Show button if no receipt sent yet -->
+                        <a href="payment.php?booking_id=<?php echo $r['id']; ?>" class="btn-pay">Upload Payment Receipt</a>
+                    <?php }
+                } ?>
             </div>
         </div>
     <?php } ?>
@@ -88,7 +107,14 @@ $client_id = $_SESSION["client_id"];
     <!-- MAKEUP APPOINTMENTS -->
     <h3 class="section-title">Makeup Appointments</h3>
     <?php
-    $q_makeup = mysqli_query($con,"SELECT mb.*, ma.name, ma.price, ma.image FROM makeup_bookings mb JOIN makeup_artists ma ON ma.id = mb.makeup_artist_id WHERE mb.client_id='$client_id' ORDER BY mb.id DESC");
+    $q_makeup = mysqli_query($con,"
+        SELECT mb.*, ma.name, ma.price, ma.image,
+        (SELECT status FROM payments WHERE makeup_bookings_id = mb.id ORDER BY id DESC LIMIT 1) as p_status 
+        FROM makeup_bookings mb 
+        JOIN makeup_artists ma ON ma.id = mb.makeup_artist_id 
+        WHERE mb.client_id='$client_id' 
+        ORDER BY mb.id DESC");
+
     if(mysqli_num_rows($q_makeup) == 0) echo "<p style='color:#666; margin-top:15px;'>No makeup appointments found.</p>";
     while($r=mysqli_fetch_assoc($q_makeup)){ ?>
         <div class="card">
@@ -101,9 +127,15 @@ $client_id = $_SESSION["client_id"];
                     <span class="data-item">📅 <?php echo $r['booking_date']; ?> @ <?php echo $r['booking_time']; ?></span>
                     <span class="data-item">💳 PAYMENT: <?php echo strtoupper($r['payment_status'] ?: 'unpaid'); ?></span>
                 </div>
-                <?php if($r['status'] == 'approved' && $r['payment_status'] !== 'paid'){ ?>
-                    <a href="payment.php?makeup_id=<?php echo $r['id']; ?>" class="btn-pay">Pay Appointment</a>
-                <?php } ?>
+                
+                <?php 
+                if($r['status'] == 'approved' && $r['payment_status'] !== 'paid'){ 
+                    if($r['p_status'] == 'pending'){ ?>
+                        <div class="status-verification">⌛ Receipt sent. Waiting for verification...</div>
+                    <?php } else { ?>
+                        <a href="payment.php?makeup_id=<?php echo $r['id']; ?>" class="btn-pay">Pay Appointment</a>
+                    <?php }
+                } ?>
             </div>
         </div>
     <?php } ?>
@@ -111,7 +143,14 @@ $client_id = $_SESSION["client_id"];
     <!-- PACKAGES -->
     <h3 class="section-title">Luxury Packages</h3>
     <?php
-    $q_packs = mysqli_query($con,"SELECT pb.*, p.package_name, p.package_price, p.image FROM package_bookings pb JOIN packages p ON p.id = pb.package_id WHERE pb.client_id='$client_id' ORDER BY pb.id DESC");
+    $q_packs = mysqli_query($con,"
+        SELECT pb.*, p.package_name, p.package_price, p.image,
+        (SELECT status FROM payments WHERE package_bookings_id = pb.id ORDER BY id DESC LIMIT 1) as p_status 
+        FROM package_bookings pb 
+        JOIN packages p ON p.id = pb.package_id 
+        WHERE pb.client_id='$client_id' 
+        ORDER BY pb.id DESC");
+
     if(mysqli_num_rows($q_packs) == 0) echo "<p style='color:#666; margin-top:15px;'>No package bookings found.</p>";
     while($r=mysqli_fetch_assoc($q_packs)){ ?>
         <div class="card">
@@ -124,9 +163,15 @@ $client_id = $_SESSION["client_id"];
                     <span class="data-item">📅 <?php echo $r['date_from']; ?> to <?php echo $r['date_to']; ?></span>
                     <span class="data-item">💳 PAYMENT: <?php echo strtoupper($r['payment_status'] ?: 'unpaid'); ?></span>
                 </div>
-                <?php if($r['status'] == 'approved' && $r['payment_status'] !== 'paid'){ ?>
-                    <a href="payment.php?package_id=<?php echo $r['id']; ?>" class="btn-pay">Pay Package Bundle</a>
-                <?php } ?>
+                
+                <?php 
+                if($r['status'] == 'approved' && $r['payment_status'] !== 'paid'){ 
+                    if($r['p_status'] == 'pending'){ ?>
+                        <div class="status-verification">⌛ Receipt sent. Waiting for verification...</div>
+                    <?php } else { ?>
+                        <a href="payment.php?package_id=<?php echo $r['id']; ?>" class="btn-pay">Pay Package Bundle</a>
+                    <?php }
+                } ?>
             </div>
         </div>
     <?php } ?>
